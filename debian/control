@@ -1,0 +1,30 @@
+Source: tooth
+Section: unknown
+Priority: optional
+Maintainer: maryjane <maryjane@disroot.org>
+Build-Depends: debhelper-compat (= 13),
+ appstream_util,
+ gettext,
+ libglib2.0-dev,
+ libjson-glib-dev,
+ libxml2-dev,
+ libgee-0.8-dev,
+ libsoup2.4-dev,
+ libgtk-4-dev,
+ libadwaita-1-dev,
+ libsecret-1-dev,
+ valac,
+Standards-Version: 4.5.1
+Homepage: https://github.com/GeopJr/Tooth
+#Vcs-Browser: https://github.com/GeopJr/Tooth
+#Vcs-Git: https://github.com/GeopJr/Tooth.git
+Rules-Requires-Root: no
+
+Package: tooth
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Lightning fast client for Mastodon
+ Tooth is a GTK client for the world's largest, decentralized, microblogging
+ platform, Mastodon. With the user experience in mind, it provides a clean,
+ native interface that allows you to integrate Mastodon's social experience
+ seamlessly with your desktop environment.
