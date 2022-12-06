@@ -2,8 +2,9 @@ Source: tooth
 Section: unknown
 Priority: optional
 Maintainer: maryjane <maryjane@disroot.org>
-Build-Depends: debhelper-compat (= 13),
- appstream_util,
+Build-Depends:
+ debhelper-compat (= 13),
+ appstream-util,
  gettext,
  libglib2.0-dev,
  libjson-glib-dev,
@@ -13,7 +14,7 @@ Build-Depends: debhelper-compat (= 13),
  libgtk-4-dev,
  libadwaita-1-dev,
  libsecret-1-dev,
- valac,
+ valac
 Standards-Version: 4.5.1
 Homepage: https://github.com/GeopJr/Tooth
 #Vcs-Browser: https://github.com/GeopJr/Tooth
