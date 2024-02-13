@@ -1,6 +1,3 @@
-using GLib;
-using Gdk;
-
 public class Tuba.Host {
 
 	// Open a URI in the user's default application
@@ -11,56 +8,39 @@ public class Tuba.Host {
 
 		if (settings.strip_tracking)
 			uri = Tracking.strip_utm (uri);
-		message (@"Opening URI: $uri");
+		debug (@"Opening URI: $uri");
 		try {
 			var success = AppInfo.launch_default_for_uri (uri, null);
 			if (!success)
 				throw new Oopsie.USER ("launch_default_for_uri() failed");
 		}
-		catch (Error e){
-			#if GTK_4_10
-				var launcher = new Gtk.UriLauncher(uri);
-				launcher.launch.begin(app.active_window, null, (obj, res) => {
-					try {
-						launcher.launch.end (res);
-					} catch (Error e) {
-						warning (@"Error opening uri \"$uri\": $(e.message)");
-					}
-				});
-			#else
-				Gtk.show_uri(app.active_window, uri, Gdk.CURRENT_TIME);
-			#endif
+		catch (Error e) {
+			var launcher = new Gtk.UriLauncher (uri);
+			launcher.launch.begin (app.active_window, null, (obj, res) => {
+				try {
+					launcher.launch.end (res);
+				} catch (Error e) {
+					warning (@"Error opening uri \"$uri\": $(e.message)");
+				}
+			});
 		}
 		return true;
 	}
 
 	public static void copy (string str) {
-		Display display = Display.get_default();
+		Gdk.Display display = Gdk.Display.get_default ();
 		if (display == null) return;
 
-		display.get_clipboard().set_text(str);
-	}
-
-	public static string get_uri_host (string uri) {
-		var p1 = uri;
-		if ("//" in uri)
-			p1 = uri.split ("//")[1];
-
-		return p1.split ("/")[0];
+		display.get_clipboard ().set_text (str);
 	}
 
 	public async static string download (string url) throws Error {
-		message (@"Downloading file: $url...");
+		debug (@"Downloading file: $url…");
 
 		var file_name = Path.get_basename (url);
 		var dir_name = Path.get_dirname (url);
 
-		var dir_path = Path.build_path (
-			Path.DIR_SEPARATOR_S,
-			Environment.get_user_cache_dir (), // Environment.get_user_special_dir (UserDirectory.DOWNLOAD),
-			Build.DOMAIN,
-			get_uri_host (dir_name));
-
+		var dir_path = GLib.Path.build_path (GLib.Path.DIR_SEPARATOR_S, Tuba.cache_path, "manual", "media");
 		var file_path = Path.build_path (
 			Path.DIR_SEPARATOR_S,
 			dir_path,
@@ -73,17 +53,19 @@ public class Tuba.Host {
 		var file = File.new_for_path (file_path);
 
 		if (!file.query_exists ()) {
-			var msg = yield new Request.GET (url)
+			// Disable libsoup's cache on these
+			// it's better if we handle it so it doesn't affect its limits and loading
+			var msg = yield new Request.GET (url).disable_cache ()
 				.await ();
 
 			var data = msg.response_body;
 			FileOutputStream stream = yield file.create_async (FileCreateFlags.PRIVATE);
 			yield stream.splice_async (data, OutputStreamSpliceFlags.CLOSE_SOURCE | OutputStreamSpliceFlags.CLOSE_TARGET);
 
-			message (@"   OK: File written to: $file_path");
+			debug (@"   OK: File written to: $file_path");
 		}
 		else
-			message ("   OK: File already exists");
+			debug ("   OK: File already exists");
 
 		return file_path;
 	}

@@ -1,6 +1,8 @@
 sources += files(
     'Account.vala',
     'AccountField.vala',
+    'Announcement.vala',
+    # 'Akkoma.vala', # uneeded for now
     'Attachment.vala',
     'BookWyrm.vala',
     'Conversation.vala',
@@ -13,7 +15,6 @@ sources += files(
     'Mention.vala',
     'Notification.vala',
     'PeerTube.vala',
-    'Pleroma.vala',
     'Poll.vala',
     'PollOption.vala',
     'Relationship.vala',
@@ -25,8 +26,10 @@ sources += files(
 )
 
 subdir('Account')
+# subdir('Akkoma')
 subdir('BookWyrm')
 subdir('Funkwhale')
 subdir('Instance')
 subdir('PeerTube')
+subdir('Pleroma')
 subdir('Status')

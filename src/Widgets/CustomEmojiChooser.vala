@@ -4,35 +4,46 @@ public class Tuba.Widgets.CustomEmojiChooser : Gtk.Popover {
     public bool is_populated { get; protected set; default=false; }
 
     private Gee.HashMap<string, Gee.ArrayList<API.Emoji>> gen_emojis_cat_map () {
-		var res = new Gee.HashMap<string, Gee.ArrayList<API.Emoji>>();
+		var res = new Gee.HashMap<string, Gee.ArrayList<API.Emoji>> ();
 		var emojis = accounts.active.instance_emojis;
 
 		if (emojis != null && emojis.size > 0) {
 			emojis.@foreach (e => {
 				if (!e.visible_in_picker) return true;
 
-				if (res.has_key(e.category)) {
+				if (res.has_key (e.category)) {
 					var array = res.get (e.category);
 					array.add (e);
 				} else {
 					var array = new Gee.ArrayList<API.Emoji> ();
 					array.add (e);
-					res.set(e.category, array);
+					res.set (e.category, array);
 				}
 
 				return true;
 			});
+
+            res.@foreach (e => {
+                e.value.sort ((a, b) => a.shortcode.collate (b.shortcode));
+
+                return true;
+            });
+
 		}
 
 		return res;
 	}
+
+    ~CustomEmojiChooser () {
+        debug ("Destroying CustomEmojiChooser");
+    }
 
     private Gtk.Box custom_emojis_box;
     private Gtk.SearchEntry entry;
     private Gtk.FlowBox results;
     private Gtk.Label results_label;
     private Gtk.ScrolledWindow custom_emojis_scrolled;
-    private GLib.ListStore list_store = new GLib.ListStore (typeof (API.Emoji));
+
 	construct {
         this.add_css_class ("emoji-picker");
         custom_emojis_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 6) {
@@ -57,12 +68,6 @@ public class Tuba.Widgets.CustomEmojiChooser : Gtk.Popover {
         results = create_emoji_box ();
         custom_emojis_box.append (results);
 
-        results.bind_model (list_store, model => {
-            var emoji = model as API.Emoji;
-            if (emoji == null) Process.exit (0);
-            return create_emoji_button (emoji);
-        });
-
         entry = new Gtk.SearchEntry () {
 			text = query,
             hexpand = true
@@ -76,12 +81,20 @@ public class Tuba.Widgets.CustomEmojiChooser : Gtk.Popover {
 
         entry.activate.connect (search);
         entry.search_changed.connect (search);
-        entry.stop_search.connect (search);
+        entry.stop_search.connect (on_close);
+    }
+
+    private void add_to_results (API.Emoji emoji) {
+        results.append (create_emoji_button (emoji));
+    }
+
+    private void remove_all_from_results () {
+        results.remove_all ();
     }
 
     protected void search () {
         query = entry.text.chug ().chomp ().down ().replace (":", "");
-        list_store.remove_all ();
+        remove_all_from_results ();
 
 		if (query == "") {
             results_label.visible = false;
@@ -96,16 +109,18 @@ public class Tuba.Widgets.CustomEmojiChooser : Gtk.Popover {
 				if (!e.visible_in_picker) return true;
 				if (query in e.shortcode) {
                     at_least_one = true;
-                    list_store.append (e);
+                    add_to_results (e);
                 };
 
 				return true;
 			});
 
             if (at_least_one) {
+                // translators: Used when there are results in the custom emoji picker
                 results_label.label = _("Results");
                 custom_emojis_scrolled.scroll_child (Gtk.ScrollType.START, false);
             } else {
+                // translators: Used when there are 0 results in the custom emoji picker
                 results_label.label = _("No Results");
             }
 
@@ -137,26 +152,36 @@ public class Tuba.Widgets.CustomEmojiChooser : Gtk.Popover {
 
     protected void populate_chooser () {
         var categorized_custom_emojis = gen_emojis_cat_map ();
-        
-        categorized_custom_emojis.@foreach (e => {
-            if (e.key == _("Other")) return true;
-			create_category (e.key, e.value);
+        var categories_keys = new Gee.ArrayList<string>.wrap (categorized_custom_emojis.keys.to_array ());
+        categories_keys.sort ((a, b) => a.collate (b));
 
-			return true;
-		});
+        if (categorized_custom_emojis.has_key (_("Other"))) {
+            create_category (
+                categorized_custom_emojis.size > 1
+                    ? _("Other")
+                    : _("Custom Emojis"),
+                categorized_custom_emojis.get (_("Other"))
+            );
 
-        if (categorized_custom_emojis.has_key (_("Other")))
-            create_category (categorized_custom_emojis.size > 1 ? _("Other") : _("Custom Emojis"), categorized_custom_emojis.get(_("Other")));
+            categories_keys.remove (_("Other"));
+        }
+
+
+        foreach (var t_shortcode in categories_keys) {
+            create_category (
+                t_shortcode,
+                categorized_custom_emojis.get (t_shortcode)
+            );
+        };
 
         is_populated = true;
     }
 
     protected Gtk.Button create_emoji_button (API.Emoji emoji) {
         var emoji_btn = new Gtk.Button () {
-            css_classes = { "flat" },
-            child = new Widgets.Emoji (emoji.url, emoji.shortcode)
+            css_classes = { "flat", "picker-emoji-button" },
+            child = new Widgets.Emoji (emoji.url, emoji.shortcode) { icon_size = Gtk.IconSize.LARGE }
         };
-        emoji_btn.set_css_name ("emoji");
 
         emoji_btn.clicked.connect (on_custom_emoji_picked);
         return emoji_btn;

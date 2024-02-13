@@ -1,13 +1,8 @@
 {
     "app-id": "dev.geopjr.Tuba",
     "runtime": "org.gnome.Platform",
-    "runtime-version": "44",
+    "runtime-version": "45beta",
     "sdk": "org.gnome.Sdk",
-    "sdk-extensions" : ["org.freedesktop.Sdk.Extension.vala"],
-    "build-options" : {
-        "prepend-path" : "/usr/lib/sdk/vala/bin/",
-        "prepend-ld-library-path" : "/usr/lib/sdk/vala/lib"
-    },
     "command": "dev.geopjr.Tuba",
     "finish-args": [
         "--device=dri",
@@ -52,6 +47,20 @@
             "build-commands" : [
                 "GDK_PIXBUF_MODULEDIR=/app/lib/gdk-pixbuf-2.0/2.10.0/loaders/ gdk-pixbuf-query-loaders > /app/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache",
                 "gdk-pixbuf-query-loaders >> /app/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+            ]
+        },
+        {
+            "name" : "libspelling",
+            "buildsystem" : "meson",
+            "config-opts" : [
+                "-Ddocs=false"
+            ],
+            "sources" : [
+                {
+                    "type" : "git",
+                    "url" : "https://gitlab.gnome.org/chergert/libspelling.git",
+                    "branch" : "main"
+                }
             ]
         },
         {

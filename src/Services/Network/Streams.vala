@@ -1,6 +1,3 @@
-using Soup;
-using Gee;
-
 public class Tuba.Streams : Object {
 
 	protected HashTable<string, Connection> connections {
@@ -10,13 +7,16 @@ public class Tuba.Streams : Object {
 	}
 
 	public void subscribe (string? url, Streamable s) {
+		#if DEV_MODE
+			return;
+		#endif
+
 		if (url == null)
 			return;
 
 		if (connections.contains (url)) {
 			connections[url].add (s);
-		}
-		else {
+		} else {
 			var con = new Connection (url);
 			connections[url] = con;
 			con.add (s);
@@ -45,35 +45,40 @@ public class Tuba.Streams : Object {
 	// }
 
 	protected class Connection : Object {
-		public ArrayList<Streamable> subscribers;
-		protected WebsocketConnection socket;
-		protected Message msg;
+		public Gee.ArrayList<Streamable> subscribers;
+		protected Soup.WebsocketConnection socket;
 
 		protected bool closing = false;
 		protected int timeout = 1;
 
+		public string url { get; private set; }
+
 		public string name {
 			owned get {
-				var url = msg.get_uri ().to_string ();
 				return url.slice (0, url.last_index_of ("&access_token"));
 			}
 		}
 
 		public Connection (string url) {
-			this.subscribers = new ArrayList<Streamable> ();
-			this.msg = new Message ("GET", url);
+			this.subscribers = new Gee.ArrayList<Streamable> ();
+			this.url = url;
 		}
 
 		public bool start () {
-			message (@"Opening stream: $name");
-			network.session.websocket_connect_async.begin (msg, null, null, 0, null, (obj, res) => {
+			debug (@"Opening stream: $name");
+			network.session.websocket_connect_async.begin (new Soup.Message ("GET", url), null, null, 0, null, (obj, res) => {
 				try {
 					socket = network.session.websocket_connect_async.end (res);
+					socket.keepalive_interval = 30;
+
 					socket.error.connect (on_error);
 					socket.closed.connect (on_closed);
 					socket.message.connect (on_message);
 				} catch (Error e) {
 					warning (@"Error opening stream: $(e.message)");
+					if (e.matches (Quark.from_string ("g-tls-error-quark"), 3) || e.matches (Quark.from_string ("g-io-error-quark"), 44)) {
+						on_closed ();
+					}
 				}
 			});
 			return false;
@@ -91,7 +96,7 @@ public class Tuba.Streams : Object {
 			}
 
 			if (subscribers.size <= 0) {
-				message (@"Closing: $name");
+				debug (@"Closing: $name");
 				closing = true;
 				if (socket != null)
 					socket.close (0, null);
@@ -108,12 +113,13 @@ public class Tuba.Streams : Object {
 		}
 
 		void on_closed () {
+			socket = null;
 			if (!closing) {
 				warning (@"DISCONNECTED: $name. Reconnecting in $timeout seconds.");
 				GLib.Timeout.add_seconds (timeout, start);
-				timeout = int.min (timeout*2, 6);
+				timeout = int.min (timeout * 2, 6);
 			}
-			message (@"Closing stream: $name");
+			debug (@"Closing stream: $name");
 		}
 
 		protected virtual void on_message (int i, Bytes bytes) {
@@ -122,7 +128,7 @@ public class Tuba.Streams : Object {
 				decode (bytes, out ev);
 
 				subscribers.@foreach (s => {
-					message (@"$(name): $(ev.type) for $(s.get_subscriber_name ())");
+					debug (@"$(name): $(ev.type) for $(s.get_subscriber_name ())");
 					s.stream_event[ev.type] (ev);
 					return true;
 				});
@@ -132,7 +138,7 @@ public class Tuba.Streams : Object {
 			}
 		}
 
-		void decode (Bytes bytes, out Streamable.Event event) throws Error{
+		void decode (Bytes bytes, out Streamable.Event event) throws Error {
 			var msg = (string) bytes.get_data ();
 			var parser = new Json.Parser ();
 			parser.load_from_data (msg, -1);

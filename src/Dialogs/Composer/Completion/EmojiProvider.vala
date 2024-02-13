@@ -1,9 +1,7 @@
-using Gtk;
-
 public class Tuba.EmojiProvider: Tuba.CompletionProvider {
 
 	public EmojiProvider () {
-		Object(trigger_char: ":");
+		Object (trigger_char: ":");
 	}
 
 	internal class Proposal: Object, GtkSource.CompletionProposal {
@@ -13,14 +11,12 @@ public class Tuba.EmojiProvider: Tuba.CompletionProvider {
 			Object (emoji: entity);
 		}
 
-		public override string? get_typed_text() {
+		public override string? get_typed_text () {
 			return this.emoji.shortcode + ":";
 		}
 	}
 
-	public override async ListModel suggest (GtkSource.CompletionContext context, Cancellable? cancellable) throws Error {
-		var word = context.get_word ();
-
+	public override async ListModel suggest (string word, Cancellable? cancellable) throws Error {
 		var results = new GLib.ListStore (typeof (Object));
 		var emojis = accounts.active.instance_emojis;
 
@@ -37,14 +33,20 @@ public class Tuba.EmojiProvider: Tuba.CompletionProvider {
 		return results;
 	}
 
-	public override void display (GtkSource.CompletionContext context, GtkSource.CompletionProposal proposal, GtkSource.CompletionCell cell) {
+	public override void display (
+		GtkSource.CompletionContext context,
+		GtkSource.CompletionProposal proposal,
+		GtkSource.CompletionCell cell
+	) {
 		var emoji = (proposal as Proposal)?.emoji;
 		return_if_fail (emoji != null);
 
 		switch (cell.get_column ()) {
 			case GtkSource.CompletionColumn.ICON:
-				var image = new Gtk.Image ();
-				image_cache.request_paintable (emoji.url, (is_loaded, paintable) => {
+				var image = new Gtk.Image () {
+					pixel_size = 36
+				};
+				Tuba.Helper.Image.request_paintable (emoji.url, null, (paintable) => {
 					image.paintable = paintable;
 				});
 				cell.set_widget (image);
@@ -57,5 +59,4 @@ public class Tuba.EmojiProvider: Tuba.CompletionProvider {
 				break;
 		}
 	}
-
 }

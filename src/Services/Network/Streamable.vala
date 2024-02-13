@@ -41,7 +41,7 @@ public abstract interface Tuba.Streamable : Object {
 	}
 
 	public string get_subscriber_name () {
-		return this.get_type().name ();
+		return this.get_type ().name ();
 	}
 
 	protected void construct_streamable () {
@@ -59,7 +59,7 @@ public abstract interface Tuba.Streamable : Object {
 	}
 
 	protected void update_stream () {
-		// message (get_subscriber_name ()+": UPDATED to "+subscribed.to_string ());
+		// debug (get_subscriber_name ()+": UPDATED to "+subscribed.to_string ());
 
 		unsubscribe ();
 		if (subscribed)

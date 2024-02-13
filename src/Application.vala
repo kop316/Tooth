@@ -1,5 +1,3 @@
-using Gtk;
-
 namespace Tuba {
 	public errordomain Oopsie {
 		USER,
@@ -15,8 +13,9 @@ namespace Tuba {
 	public static Network network;
 	public static Streams streams;
 
-	public static EntityCache entity_cache;
-	public static ImageCache image_cache;
+	//  public static EntityCache entity_cache;
+	//  public static ImageCache image_cache;
+	//  public static BlurhashCache blurhash_cache;
 
 	public static GLib.Regex bookwyrm_regex;
 	public static GLib.Regex custom_emoji_regex;
@@ -24,13 +23,16 @@ namespace Tuba {
 	public static bool is_rtl;
 
 	public static bool start_hidden = false;
+	public static bool is_flatpak = false;
+	public static string cache_path;
 
 	public class Application : Adw.Application {
 
 		public Dialogs.MainWindow? main_window { get; set; }
 		public Dialogs.NewAccount? add_account_window { get; set; }
+		public bool is_mobile { get; set; default=false; }
 
-		public Gee.ArrayList<Tuba.Locale> locales { owned get { return generate_iso_639_1 (); } }
+		public Locales app_locales { get; construct set; }
 
 		// These are used for the GTK Inspector
 		public Settings app_settings { get {return Tuba.settings; } }
@@ -39,17 +41,27 @@ namespace Tuba {
 		public Streams app_streams { get {return Tuba.streams; } }
 
 		public signal void refresh ();
-		public signal void toast (string title);
+		public signal void toast (string title, uint timeout = 5);
+
+		#if DEV_MODE
+			public signal void dev_new_post (Json.Node node);
+			public signal void dev_new_notification (Json.Node node);
+		#endif
 
 		//  public CssProvider css_provider = new CssProvider ();
 		//  public CssProvider zoom_css_provider = new CssProvider (); //FIXME: Zoom not working
 
-		public const GLib.OptionEntry[] app_options = {
+		public const GLib.OptionEntry[] APP_OPTIONS = {
 			{ "hidden", 0, 0, OptionArg.NONE, ref start_hidden, "Do not show main window on start", null },
 			{ null }
 		};
 
-		private const GLib.ActionEntry[] app_entries = {
+		private const GLib.ActionEntry[] APP_ENTRIES = {
+			#if DEV_MODE
+			 	// vala-lint=block-opening-brace-space-before
+				{ "dev-only-window", dev_only_window_activated },
+			#endif
+			 // vala-lint=block-opening-brace-space-before
 			{ "about", about_activated },
 			{ "compose", compose_activated },
 			{ "back", back_activated },
@@ -58,34 +70,99 @@ namespace Tuba {
 			{ "quit", quit_activated },
 			{ "back-home", back_home_activated },
 			{ "scroll-page-down", scroll_view_page_down },
-			{ "scroll-page-up", scroll_view_page_up }
+			{ "scroll-page-up", scroll_view_page_up },
+			{ "open-status-url", open_status_url, "s" },
+			{ "answer-follow-request", answer_follow_request, "(ssb)" },
+			{ "follow-back", follow_back, "(ss)" },
+			{ "reply-to-status-uri", reply_to_status_uri, "(ss)" },
+			{ "remove-from-followers", remove_from_followers, "(ss)" },
+			{ "open-preferences", open_preferences },
+			{ "open-current-account-profile", open_current_account_profile }
 		};
+
+		#if DEV_MODE
+			private void dev_only_window_activated () {
+				new Dialogs.Dev ().show ();
+			}
+		#endif
+
+		private void remove_from_followers (GLib.SimpleAction action, GLib.Variant? value) {
+			if (value == null) return;
+
+			accounts.active?.remove_from_followers (
+				value.get_child_value (0).get_string (),
+				value.get_child_value (1).get_string ()
+			);
+		}
+
+		private void reply_to_status_uri (GLib.SimpleAction action, GLib.Variant? value) {
+			if (value == null) return;
+
+			accounts.active?.reply_to_status_uri (
+				value.get_child_value (0).get_string (),
+				value.get_child_value (1).get_string ()
+			);
+		}
+
+		private void follow_back (GLib.SimpleAction action, GLib.Variant? value) {
+			if (value == null) return;
+
+			accounts.active?.follow_back (
+				value.get_child_value (0).get_string (),
+				value.get_child_value (1).get_string ()
+			);
+		}
+
+		private void open_status_url (GLib.SimpleAction action, GLib.Variant? value) {
+			if (value == null) return;
+
+			accounts.active?.open_status_url (value.get_string ());
+		}
+
+		private void answer_follow_request (GLib.SimpleAction action, GLib.Variant? value) {
+			if (value == null) return;
+
+			accounts.active?.answer_follow_request (
+				value.get_child_value (0).get_string (),
+				value.get_child_value (1).get_string (),
+				value.get_child_value (2).get_boolean ()
+			);
+		}
+
+		private void handle_web_ap (Uri uri) {
+			if (accounts.active == null) return;
+
+			accounts.active.resolve.begin (WebApHandler.from_uri (uri), (obj, res) => {
+				try {
+					accounts.active.resolve.end (res).open ();
+				} catch (Error e) {
+					string msg = @"Failed to resolve URL \"$uri\": $(e.message)";
+					warning (msg);
+
+					var dlg = inform (_("Error"), msg);
+					dlg.present ();
+				}
+			});
+		}
 
 		construct {
 			application_id = Build.DOMAIN;
 			flags = ApplicationFlags.HANDLES_OPEN;
-		}
 
-		public string[] ACCEL_ABOUT = {"F1"};
-		public string[] ACCEL_NEW_POST = {"<Ctrl>T", "<Ctrl>N"};
-		public string[] ACCEL_BACK = {"<Alt>BackSpace", "<Alt>Left", "Escape", "<Alt>KP_Left", "Pointer_DfltBtnPrev"};
-		public string[] ACCEL_REFRESH = {"<Ctrl>R", "F5"};
-		public string[] ACCEL_SEARCH = {"<Ctrl>F"};
-		public string[] ACCEL_QUIT = {"<Ctrl>Q"};
-		public string[] ACCEL_CLOSE = {"<Ctrl>W"};
-		public string[] ACCEL_BACK_HOME = {"<Alt>Home"};
-		public string[] ACCEL_SCROLL_PAGE_DOWN = {"Page_Down"};
-		public string[] ACCEL_SCROLL_PAGE_UP = {"Page_Up"};
+			app_locales = new Tuba.Locales ();
+		}
 
 		public static int main (string[] args) {
 			try {
 				var opt_context = new OptionContext ("- Options");
-				opt_context.add_main_entries (app_options, null);
+				opt_context.add_main_entries (APP_OPTIONS, null);
 				opt_context.parse (ref args);
 			}
 			catch (GLib.OptionError e) {
 				warning (e.message);
 			}
+
+			cache_path = GLib.Path.build_path (GLib.Path.DIR_SEPARATOR_S, GLib.Environment.get_user_cache_dir (), Build.NAME.down ());
 
 			try {
 				bookwyrm_regex = new GLib.Regex ("/book/\\d+/s/[-_a-z0-9]*", GLib.RegexCompileFlags.OPTIMIZE);
@@ -94,20 +171,34 @@ namespace Tuba {
 			}
 
 			try {
-				custom_emoji_regex = new GLib.Regex("(:[a-zA-Z0-9_]{2,}:)", GLib.RegexCompileFlags.OPTIMIZE);
+				custom_emoji_regex = new GLib.Regex ("(:[a-zA-Z0-9_]{2,}:)", GLib.RegexCompileFlags.OPTIMIZE);
 			} catch (GLib.RegexError e) {
 				warning (e.message);
 			}
 
 			try {
-				rtl_regex = new GLib.Regex("[\u0591-\u07FF\uFB1D-\uFDFD\uFE70-\uFEFC]", GLib.RegexCompileFlags.OPTIMIZE, GLib.RegexMatchFlags.ANCHORED);
+				rtl_regex = new GLib.Regex (
+					"[\u0591-\u07FF\uFB1D-\uFDFD\uFE70-\uFEFC]",
+					GLib.RegexCompileFlags.OPTIMIZE,
+					GLib.RegexMatchFlags.ANCHORED
+				);
 			} catch (GLib.RegexError e) {
 				warning (e.message);
 			}
 
+			is_flatpak = GLib.Environment.get_variable ("FLATPAK_ID") != null
+			|| GLib.File.new_for_path ("/.flatpak-info").query_exists ();
+
 			Intl.setlocale (LocaleCategory.ALL, "");
-			Intl.bindtextdomain(Build.GETTEXT_PACKAGE, Build.LOCALEDIR);
-			Intl.textdomain(Build.GETTEXT_PACKAGE);
+			Intl.bindtextdomain (Build.GETTEXT_PACKAGE, Build.LOCALEDIR);
+			Intl.textdomain (Build.GETTEXT_PACKAGE);
+
+			GLib.Environment.unset_variable ("GTK_THEME");
+			#if WINDOWS
+				GLib.Environment.set_variable ("SECRET_BACKEND", "file", false);
+				if (GLib.Environment.get_variable ("SECRET_BACKEND") == "file")
+					GLib.Environment.set_variable ("SECRET_FILE_TEST_PASSWORD", @"$(GLib.Environment.get_user_name ())$(Build.DOMAIN)", false);
+			#endif
 
 			app = new Application ();
 			return app.run (args);
@@ -118,7 +209,7 @@ namespace Tuba {
 			try {
 				var lines = troubleshooting.split ("\n");
 				foreach (unowned string line in lines) {
-					message (line);
+					debug (line);
 				}
 				Adw.init ();
 				GtkSource.init ();
@@ -126,11 +217,14 @@ namespace Tuba {
 				settings = new Settings ();
 				streams = new Streams ();
 				network = new Network ();
-				entity_cache = new EntityCache ();
-				image_cache = new ImageCache () {
-					maintenance_secs = 60 * 5
-				};
-				accounts = new SecretAccountStore();
+				//  entity_cache = new EntityCache ();
+				//  image_cache = new ImageCache () {
+				//  	maintenance_secs = 60 * 5
+				//  };
+				//  blurhash_cache = new BlurhashCache () {
+				//  	maintenance_secs = 30
+				//  };
+				accounts = new SecretAccountStore ();
 				accounts.init ();
 
 				//  css_provider.load_from_resource (@"$(Build.RESOURCES)app.css");
@@ -148,20 +242,26 @@ namespace Tuba {
 			ColorScheme color_scheme = (ColorScheme) settings.get_enum ("color-scheme");
 			style_manager.color_scheme = color_scheme.to_adwaita_scheme ();
 
-			set_accels_for_action ("app.about", ACCEL_ABOUT);
-			set_accels_for_action ("app.compose", ACCEL_NEW_POST);
-			set_accels_for_action ("app.back", ACCEL_BACK);
-			set_accels_for_action ("app.refresh", ACCEL_REFRESH);
-			set_accels_for_action ("app.search", ACCEL_SEARCH);
-			set_accels_for_action ("app.quit", ACCEL_QUIT);
-			set_accels_for_action ("window.close", ACCEL_CLOSE);
-			set_accels_for_action ("app.back-home", ACCEL_BACK_HOME);
-			set_accels_for_action ("app.scroll-page-down", ACCEL_SCROLL_PAGE_DOWN);
-			set_accels_for_action ("app.scroll-page-up", ACCEL_SCROLL_PAGE_UP);
-			add_action_entries (app_entries, this);
+			#if DEV_MODE
+				set_accels_for_action ("app.dev-only-window", {"F2"});
+			#endif
+			set_accels_for_action ("app.about", {"F1"});
+			set_accels_for_action ("app.open-preferences", {"<Ctrl>comma"});
+			set_accels_for_action ("app.compose", {"<Ctrl>T", "<Ctrl>N"});
+			set_accels_for_action ("app.back", {"<Alt>BackSpace", "<Alt>Left", "Escape", "<Alt>KP_Left", "Pointer_DfltBtnPrev"});
+			set_accels_for_action ("app.refresh", {"<Ctrl>R", "F5"});
+			set_accels_for_action ("app.search", {"<Ctrl>F"});
+			set_accels_for_action ("app.quit", {"<Ctrl>Q"});
+			set_accels_for_action ("window.close", {"<Ctrl>W"});
+			set_accels_for_action ("app.back-home", {"<Alt>Home"});
+			set_accels_for_action ("app.scroll-page-down", {"Page_Down"});
+			set_accels_for_action ("app.scroll-page-up", {"Page_Up"});
+			add_action_entries (APP_ENTRIES, this);
 		}
 
+		private bool activated = false;
 		protected override void activate () {
+			activated = true;
 			present_window ();
 
 			if (start_hidden) {
@@ -172,41 +272,72 @@ namespace Tuba {
 		}
 
 		protected override void shutdown () {
-			settings.apply ();
+			#if !DEV_MODE
+				settings.apply_all ();
+			#endif
+			network.flush_cache ();
+
 			base.shutdown ();
 		}
 
 		public override void open (File[] files, string hint) {
+			if (!activated) activate ();
+
 			foreach (File file in files) {
-				string uri = file.get_uri ();
-				if (add_account_window != null)
-					add_account_window.redirect (uri);
-				else
-					warning (@"Received an unexpected uri to open: $uri");
-				return;
+				string unparsed_uri = file.get_uri ();
+
+				try {
+					Uri uri = Uri.parse (unparsed_uri, UriFlags.NONE);
+					string scheme = uri.get_scheme ();
+
+					switch (scheme) {
+						case "tuba":
+							// translators: the variable is a uri scheme like 'https'
+							if (add_account_window == null)
+								throw new Error.literal (-1, 1, _("'%s://' may only be used when adding a new account").printf (scheme));
+							add_account_window.redirect (uri);
+
+							break;
+						case "web+ap":
+							// translators: the variable is a uri scheme like 'https'
+							if (add_account_window != null)
+								throw new Error.literal (-1, 2, _("'%s://' may not be used when adding a new account").printf (scheme));
+							handle_web_ap (uri);
+
+							break;
+						default:
+							// translators: the first variable is the app name ('Tuba'),
+							//				the second one is a uri scheme like 'https'
+							throw new Error.literal (-1, 3, _("%s does not accept '%s://'").printf (Build.NAME, scheme));
+					}
+				} catch (GLib.Error e) {
+					string msg = @"Couldn't open $unparsed_uri: $(e.message)";
+					warning (msg);
+					var dlg = inform (_("Error"), msg);
+					dlg.present ();
+				}
 			}
 		}
 
 		public void present_window (bool destroy_main = false) {
 			if (accounts.saved.is_empty) {
 				if (main_window != null && destroy_main)
-					main_window.hide();
-				message ("Presenting NewAccount dialog");
+					main_window.hide ();
+				debug ("Presenting NewAccount dialog");
 				if (add_account_window == null)
 					new Dialogs.NewAccount ();
 				add_account_window.present ();
-			}
-			else {
-				message ("Presenting MainWindow");
+			} else {
+				debug ("Presenting MainWindow");
 				if (main_window == null) {
 					main_window = new Dialogs.MainWindow (this);
-					is_rtl = Gtk.Widget.get_default_direction() == Gtk.TextDirection.RTL;
+					is_rtl = Gtk.Widget.get_default_direction () == Gtk.TextDirection.RTL;
 				}
 				if (!start_hidden) main_window.present ();
 			}
 
 			if (main_window != null)
-				main_window.close_request.connect(on_window_closed);
+				main_window.close_request.connect (on_window_closed);
 		}
 
 		public bool on_window_closed () {
@@ -220,6 +351,8 @@ namespace Tuba {
 		}
 
 		void compose_activated () {
+			if (accounts.active.instance_info == null) return;
+
 			new Dialogs.Compose ();
 		}
 
@@ -251,20 +384,35 @@ namespace Tuba {
 			main_window.scroll_view_page (true);
 		}
 
-		string troubleshooting = "os: %s %s\nprefix: %s\nflatpak: %s\nversion: %s (%s)\ngtk: %u.%u.%u (%d.%d.%d)\nlibadwaita: %u.%u.%u (%d.%d.%d)\nlibsoup: %u.%u.%u (%d.%d.%d)%s".printf(
+		void open_preferences () {
+			Dialogs.Preferences.open ();
+		}
+
+		void open_current_account_profile () {
+			accounts.active.open ();
+			close_sidebar ();
+		}
+
+		private void close_sidebar () {
+			var split_view = app.main_window.split_view;
+			if (split_view.collapsed)
+				split_view.show_sidebar = false;
+		}
+
+		string troubleshooting = "os: %s %s\nprefix: %s\nflatpak: %s\nversion: %s (%s)\ngtk: %u.%u.%u (%d.%d.%d)\nlibadwaita: %u.%u.%u (%d.%d.%d)\nlibsoup: %u.%u.%u (%d.%d.%d)%s".printf ( // vala-lint=line-length
 				GLib.Environment.get_os_info ("NAME"), GLib.Environment.get_os_info ("VERSION"),
 				Build.PREFIX,
-				(GLib.Environment.get_variable("FLATPAK_ID") != null || GLib.File.new_for_path("/.flatpak-info").query_exists()).to_string(),
+				Tuba.is_flatpak.to_string (),
 				Build.VERSION, Build.PROFILE,
-				Gtk.get_major_version(), Gtk.get_minor_version(), Gtk.get_micro_version(),
+				Gtk.get_major_version (), Gtk.get_minor_version (), Gtk.get_micro_version (),
 				Gtk.MAJOR_VERSION, Gtk.MINOR_VERSION, Gtk.MICRO_VERSION,
-				Adw.get_major_version(), Adw.get_minor_version(), Adw.get_micro_version(),
+				Adw.get_major_version (), Adw.get_minor_version (), Adw.get_micro_version (),
 				Adw.MAJOR_VERSION, Adw.MINOR_VERSION, Adw.MICRO_VERSION,
-				Soup.get_major_version(), Soup.get_minor_version(), Soup.get_micro_version(),
+				Soup.get_major_version (), Soup.get_minor_version (), Soup.get_micro_version (),
 				Soup.MAJOR_VERSION, Soup.MINOR_VERSION, Soup.MICRO_VERSION,
 				#if GTKSOURCEVIEW_5_7_1
-					"\nlibgtksourceview: %u.%u.%u (%d.%d.%d)".printf(
-						GtkSource.get_major_version(), GtkSource.get_minor_version(), GtkSource.get_micro_version(),
+					"\nlibgtksourceview: %u.%u.%u (%d.%d.%d)".printf (
+						GtkSource.get_major_version (), GtkSource.get_minor_version (), GtkSource.get_micro_version (),
 						GtkSource.MAJOR_VERSION, GtkSource.MINOR_VERSION, GtkSource.MICRO_VERSION
 					)
 				#else
@@ -274,7 +422,8 @@ namespace Tuba {
 
 		void about_activated () {
 			const string[] ARTISTS = {
-				"Tobias Bernard"
+				"Tobias Bernard",
+				"Jakub Steiner"
 			};
 
 			const string[] DESIGNERS = {
@@ -296,7 +445,7 @@ namespace Tuba {
 				application_name = Build.NAME,
 				version = Build.VERSION,
 				support_url = Build.SUPPORT_WEBSITE,
-				license_type = License.GPL_3_0_ONLY,
+				license_type = Gtk.License.GPL_3_0_ONLY,
 				copyright = COPYRIGHT,
 				developers = DEVELOPERS,
 				artists = ARTISTS,
@@ -312,9 +461,16 @@ namespace Tuba {
 			//  dialog.translator_credits = Build.TRANSLATOR != " " ? Build.TRANSLATOR : null;
 
 			dialog.present ();
+
+			GLib.Idle.add (() => {
+				var style = Tuba.Celebrate.get_celebration_css_class (new GLib.DateTime.now ());
+				if (style != "")
+					dialog.add_css_class (style);
+				return GLib.Source.REMOVE;
+			});
 		}
 
-		public Adw.MessageDialog inform (string text, string? msg = null, Gtk.Window? win = main_window){
+		public Adw.MessageDialog inform (string text, string? msg = null, Gtk.Window? win = app.main_window) {
 			var dlg = new Adw.MessageDialog (
 				win,
 				text,
@@ -324,29 +480,91 @@ namespace Tuba {
 			if (win != null)
 				dlg.transient_for = win;
 
-			dlg.add_response("ok", _("OK"));
+			dlg.add_response ("ok", _("OK"));
 
 			return dlg;
 		}
 
-		public Adw.MessageDialog question (string text, string? msg = null, Gtk.Window? win = main_window, string yes_label = _("Yes"), Adw.ResponseAppearance yes_appearance = Adw.ResponseAppearance.DEFAULT, string no_label = _("Cancel"), Adw.ResponseAppearance no_appearance = Adw.ResponseAppearance.DEFAULT) {
+		public struct QuestionButton {
+			public string label;
+			public Adw.ResponseAppearance appearance;
+		}
+
+		public struct QuestionButtons {
+			public QuestionButton yes;
+			public QuestionButton no;
+		}
+
+		public struct QuestionText {
+			public string text;
+			public bool use_markup;
+		}
+
+		public enum QuestionAnswer {
+			YES,
+			NO,
+			CLOSE;
+
+			public static QuestionAnswer from_string (string answer) {
+				switch (answer.down ()) {
+					case "yes":
+						return YES;
+					case "no":
+						return NO;
+					default:
+						return CLOSE;
+				}
+			}
+
+			public bool truthy () {
+				return this == YES;
+			}
+
+			public bool falsy () {
+				return this != YES;
+			}
+		}
+
+		public async QuestionAnswer question (
+			QuestionText title,
+			QuestionText? msg = null,
+			Gtk.Window? win = app.main_window,
+			QuestionButtons buttons = {
+				{ _("Yes"), Adw.ResponseAppearance.DEFAULT },
+				{ _("Cancel"), Adw.ResponseAppearance.DEFAULT }
+			},
+			bool skip = false // skip the dialog, used for preferences to avoid duplicate code
+		) {
+			if (skip) return QuestionAnswer.YES;
+
 			var dlg = new Adw.MessageDialog (
 				win,
-				text,
-				msg
+				title.text,
+				msg == null ? null : msg.text
 			);
 
-			dlg.add_response("no", no_label);
-			dlg.set_response_appearance("no", no_appearance);
+			dlg.heading_use_markup = title.use_markup;
+			if (msg != null) dlg.body_use_markup = msg.use_markup;
 
-			dlg.add_response("yes", yes_label);
-			dlg.set_response_appearance("yes", yes_appearance);
+			dlg.add_response ("no", buttons.no.label);
+			dlg.set_response_appearance ("no", buttons.no.appearance);
+
+			dlg.add_response ("yes", buttons.yes.label);
+			dlg.set_response_appearance ("yes", buttons.yes.appearance);
 
 			if (win != null)
 				dlg.transient_for = win;
-			return dlg;
+			return QuestionAnswer.from_string (yield dlg.choose (null));
 		}
 
+	}
+
+	public static void toggle_css (Gtk.Widget wdg, bool state, string style) {
+		if (state) {
+			wdg.add_css_class (style);
+		} else {
+			wdg.remove_css_class (style);
+		}
 	}
 
 }

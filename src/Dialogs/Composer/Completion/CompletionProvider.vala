@@ -1,8 +1,6 @@
-using Gtk;
-
 public abstract class Tuba.CompletionProvider: Object, GtkSource.CompletionProvider {
 
-	public static GLib.ListStore EMPTY = new GLib.ListStore (typeof (Object));
+	public static GLib.ListStore EMPTY = new GLib.ListStore (typeof (Object)); // vala-lint=naming-convention
 
 	public string? trigger_char { get; construct; }
 	protected bool is_capturing_input { get; set; default = false; }
@@ -11,8 +9,7 @@ public abstract class Tuba.CompletionProvider: Object, GtkSource.CompletionProvi
 	public virtual bool is_trigger (Gtk.TextIter iter, unichar ch) {
 		if (this.trigger_char == null) {
 			return this.set_input_capture (true);
-		}
-		else if (ch.to_string () == this.trigger_char) {
+		} else if (ch.to_string () == this.trigger_char) {
 			return this.set_input_capture (true);
 		}
 		return false;
@@ -21,10 +18,9 @@ public abstract class Tuba.CompletionProvider: Object, GtkSource.CompletionProvi
 	protected bool set_input_capture (bool state) {
 		this.is_capturing_input = state;
 		if (state) {
-			message ("Capturing input");
-		}
-		else {
-			message ("Stopped capturing input");
+			debug ("Capturing input");
+		} else {
+			debug ("Stopped capturing input");
 			this.empty_triggers = 0;
 		}
 		return state;
@@ -35,12 +31,27 @@ public abstract class Tuba.CompletionProvider: Object, GtkSource.CompletionProvi
 	}
 
 	public virtual void activate (GtkSource.CompletionContext context, GtkSource.CompletionProposal proposal) {
-		TextIter start;
-		TextIter end;
+		Gtk.TextIter start;
+		Gtk.TextIter end;
 		context.get_bounds (out start, out end);
 
+		// If it reports that we are not at the end
+		// of the word or line, move forward
+		if (!end.ends_word () && !end.ends_line ()) {
+			// If end is ' ', it's already the
+			// end of the word. Proceeding will
+			// capture more than needed
+			if (end.get_char () != ' ')
+				// Go forwards until we find a space
+				// aka get the full string - even if
+				// it's not considered a word by pango
+				end.forward_find_char ((e) => e.isspace (), null);
+			// plus a space since we are appending one below
+			end.forward_char ();
+		}
+
 		var buffer = start.get_buffer ();
-		var new_content = proposal.get_typed_text ();
+		var new_content = proposal.get_typed_text () + " ";
 
 		buffer.begin_user_action ();
 		buffer.@delete (ref start, ref end);
@@ -50,14 +61,25 @@ public abstract class Tuba.CompletionProvider: Object, GtkSource.CompletionProvi
 		this.set_input_capture (false);
 	}
 
-	public async GLib.ListModel populate_async (GtkSource.CompletionContext context, GLib.Cancellable? cancellable) throws Error {
+	public async GLib.ListModel populate_async (
+		GtkSource.CompletionContext context,
+		GLib.Cancellable? cancellable
+	) throws Error {
 		if (!this.is_capturing_input) {
+			// If it's not capturing,
+			// check if the character before the word
+			// is the trigger
+			Gtk.TextIter start;
+			context.get_bounds (out start, null);
+			if (start.backward_char () && is_trigger (start, start.get_char ()))
+				return yield populate_async (context, cancellable);
+
 			return EMPTY;
 		}
 
-		var word = context.get_word ();
+		string word = get_whole_word (context);
 		if (word == "") {
-			message ("Empty trigger");
+			debug ("Empty trigger");
 			this.empty_triggers++;
 
 			if (this.empty_triggers > 1) {
@@ -66,15 +88,33 @@ public abstract class Tuba.CompletionProvider: Object, GtkSource.CompletionProvi
 			return EMPTY;
 		}
 
-		var suggestions = yield this.suggest (context, cancellable);
+		var suggestions = yield this.suggest (word, cancellable);
 
-		if (word != context.get_word ())
+		if (word != get_whole_word (context))
 			return EMPTY;
 		return suggestions;
 	}
 
-	public abstract void display (GtkSource.CompletionContext context, GtkSource.CompletionProposal proposal, GtkSource.CompletionCell cell);
+	public abstract void display (
+		GtkSource.CompletionContext context,
+		GtkSource.CompletionProposal proposal,
+		GtkSource.CompletionCell cell
+	);
 
-	public abstract async GLib.ListModel suggest (GtkSource.CompletionContext context, GLib.Cancellable? cancellable) throws Error;
+	public abstract async GLib.ListModel suggest (
+		string word,
+		GLib.Cancellable? cancellable
+	) throws Error;
 
+	public string get_whole_word (GtkSource.CompletionContext context) {
+		Gtk.TextIter start;
+		Gtk.TextIter end;
+		context.get_bounds (out start, out end);
+
+		// If end is ':', everything until
+		// a newline will be treated as a word
+		if (end.get_char () != ':')
+			end.forward_word_end ();
+		return start.get_text (end);
+	}
 }

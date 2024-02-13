@@ -1,18 +1,13 @@
-using Gtk;
-using Gee;
-
 public class Tuba.Widgets.RichLabel : Adw.Bin {
-
 	Widgets.EmojiLabel widget;
 
-	// TODO: We can parse <a> tags and extract resolvable URIs now
-	public weak ArrayList<API.Mention>? mentions;
+	public weak Gee.ArrayList<API.Mention>? mentions;
 
 	public string label {
 		get { return widget.content; }
 		set {
 			widget.content = value;
-			var rtl = rtl_regex.match(value);
+			var rtl = rtl_regex.match (value);
 			if (rtl) {
 				xalign = is_rtl ? 0 : 1;
 			} else {
@@ -36,11 +31,6 @@ public class Tuba.Widgets.RichLabel : Adw.Bin {
 		set { widget.selectable = value; }
 	}
 
-	public bool ellipsize {
-		get { return widget.ellipsize; }
-		set { widget.ellipsize = value; }
-	}
-
 	public bool single_line_mode {
 		get { return widget.single_line_mode; }
 		set { widget.single_line_mode = value; }
@@ -51,53 +41,64 @@ public class Tuba.Widgets.RichLabel : Adw.Bin {
 		set { widget.xalign = value; }
 	}
 
+	public bool smaller_emoji_pixel_size {
+		get { return widget.smaller_emoji_pixel_size; }
+		set { widget.smaller_emoji_pixel_size = value; }
+	}
+
+	public bool large_emojis {
+		get { return widget.large_emojis; }
+		set { widget.large_emojis = value; }
+	}
+
 	public Gee.HashMap<string, string> instance_emojis {
 		get { return widget.instance_emojis; }
 		set { widget.instance_emojis = value; }
 	}
 
+	public int lines {
+		get { return widget.lines; }
+		set { widget.lines = value; }
+	}
+
+	// #756
+	public bool fix_overflow_hack {
+		get {
+			return widget.fix_overflow_hack;
+		}
+		set {
+			widget.fix_overflow_hack = value;
+		}
+	}
+
 	public RichLabel (string? text = null) {
 		if (text != null)
 			label = text;
-
-		widget.lines = 100;
 	}
 
 	construct {
-		widget = new Widgets.EmojiLabel() {
-			use_markup = true,
+		widget = new Widgets.EmojiLabel () {
+			use_markup = false,
 			valign = Gtk.Align.CENTER
 		};
 		widget.activate_link.connect (on_activate_link);
 		child = widget;
 	}
 
-	public static string escape_entities (string content) {
-		return content
-			.replace ("&nbsp;", " ")
-			.replace ("'", "&apos;");
-	}
-
-	public static string restore_entities (string content) {
-		return content
-			.replace ("&lt;", "<")
-			.replace ("&gt;", ">")
-			.replace ("&apos;", "'")
-			.replace ("&quot;", "\"")
-			.replace ("&#39;", "'")
-
-			// Always last since its prone to errors
-			// like &amp;lt; => &lt; => <
-			.replace ("&amp;", "&");
-	}
-
 	public bool on_activate_link (string url) {
-		if (mentions != null){
+		if (mentions != null) {
+			bool found = false;
 			mentions.@foreach (mention => {
-				if (url == mention.url)
+				if (url == mention.url) {
 					mention.open ();
+					found = true;
+					return false;
+				}
+
 				return true;
 			});
+
+			if (found) return true;
 		}
 
 		if ("/tags/" in url) {
@@ -121,8 +122,7 @@ public class Tuba.Widgets.RichLabel : Adw.Bin {
 					Host.open_uri (url);
 				}
 			});
-		}
-		else {
+		} else {
 			Host.open_uri (url);
 		}
 
@@ -132,5 +132,4 @@ public class Tuba.Widgets.RichLabel : Adw.Bin {
 	public static bool should_resolve_url (string url) {
 		return settings.aggressive_resolving || "@" in url || "user" in url;
 	}
-
 }

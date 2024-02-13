@@ -1,10 +1,21 @@
-using Gee;
-
 public class Tuba.API.SearchResults : Entity {
 
-	public ArrayList<API.Account> accounts { get; set; }
-	public ArrayList<API.Status> statuses { get; set; }
-	public ArrayList<API.Tag> hashtags { get; set; }
+	public Gee.ArrayList<API.Account> accounts { get; set; }
+	public Gee.ArrayList<API.Status> statuses { get; set; }
+	public Gee.ArrayList<API.Tag> hashtags { get; set; }
+
+	public override Type deserialize_array_type (string prop) {
+		switch (prop) {
+			case "accounts":
+				return typeof (API.Account);
+			case "statuses":
+				return typeof (API.Status);
+			case "hashtags":
+				return typeof (API.Tag);
+		}
+
+		return base.deserialize_array_type (prop);
+	}
 
 	public static SearchResults from (Json.Node node) throws Error {
 		return Entity.from_json (typeof (SearchResults), node) as SearchResults;
@@ -28,8 +39,7 @@ public class Tuba.API.SearchResults : Entity {
 			.with_param ("q", q);
 		yield req.await ();
 
-		var parser = Network.get_parser_from_inputstream(req.response_body);
+		var parser = Network.get_parser_from_inputstream (req.response_body);
 		return from (network.parse_node (parser));
 	}
-
 }

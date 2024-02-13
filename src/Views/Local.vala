@@ -1,8 +1,7 @@
 public class Tuba.Views.Local : Views.Federated {
-
-    public Local () {
+    construct {
         label = _("Local");
-        icon = "tuba-network-server-symbolic";
+        icon = "tuba-people-symbolic";
     }
 
     public override Request append_params (Request r) {
@@ -12,7 +11,8 @@ public class Tuba.Views.Local : Views.Federated {
     }
 
     public override string? get_stream_url () {
-        return account != null ? @"$(account.instance)/api/v1/streaming/?stream=public:local&access_token=$(account.access_token)" : null;
+        return account != null
+            ? @"$(account.instance)/api/v1/streaming?stream=public:local&access_token=$(account.access_token)"
+            : null;
     }
-
 }

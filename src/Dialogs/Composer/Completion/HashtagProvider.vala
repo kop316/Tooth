@@ -1,9 +1,7 @@
-using Gtk;
-
 public class Tuba.HashtagProvider: Tuba.CompletionProvider {
 
 	public HashtagProvider () {
-		Object(trigger_char: "#");
+		Object (trigger_char: "#");
 	}
 
 	internal class Proposal: Object, GtkSource.CompletionProposal {
@@ -13,19 +11,17 @@ public class Tuba.HashtagProvider: Tuba.CompletionProvider {
 			Object (tag: entity);
 		}
 
-		public override string? get_typed_text() {
-			return this.tag.name + " ";
+		public override string? get_typed_text () {
+			return this.tag.name;
 		}
 	}
 
-	public override async ListModel suggest (GtkSource.CompletionContext context, Cancellable? cancellable) throws Error {
-		var word = context.get_word ();
-
+	public override async ListModel suggest (string word, Cancellable? cancellable) throws Error {
 		var req = API.Tag.search (word);
-		yield req.await();
+		yield req.await ();
 
 		var suggestions = new GLib.ListStore (typeof (Object));
-		var parser = Network.get_parser_from_inputstream(req.response_body);
+		var parser = Network.get_parser_from_inputstream (req.response_body);
 		var results = API.SearchResults.from (network.parse_node (parser));
 		results?.hashtags.foreach (tag => {
 			var proposal = new Proposal (tag);
@@ -36,18 +32,26 @@ public class Tuba.HashtagProvider: Tuba.CompletionProvider {
 		return suggestions;
 	}
 
-	public override void display (GtkSource.CompletionContext context, GtkSource.CompletionProposal proposal, GtkSource.CompletionCell cell) {
+	public override void display (
+		GtkSource.CompletionContext context,
+		GtkSource.CompletionProposal proposal,
+		GtkSource.CompletionCell cell
+	) {
+		var tag = (proposal as Proposal)?.tag;
+		return_if_fail (tag != null);
+
 		switch (cell.get_column ()) {
 			case GtkSource.CompletionColumn.ICON:
-				cell.set_icon_name ("tuba-hashtag-symbolic");
+				cell.set_widget (new Gtk.Image.from_icon_name ("tuba-hashtag-symbolic") {
+					pixel_size = 24
+				});
 				break;
 			case GtkSource.CompletionColumn.TYPED_TEXT:
-				cell.set_text (proposal.get_typed_text ());
+				cell.set_markup (@"<b>$(tag.name)</b>\n<span alpha='50%'>$(tag.weekly_use ())</span>");
 				break;
 			default:
 				cell.text = null;
 				break;
 		}
 	}
-
 }

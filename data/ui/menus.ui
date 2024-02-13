@@ -16,14 +16,24 @@
         <attribute name="label" translatable="yes">Direct Message</attribute>
         <attribute name="action">view.mention</attribute>
         <attribute name="target">direct</attribute>
-        <attribute name="verb-icon">tuba-mail-symbolic</attribute>
+        <attribute name="verb-icon">mail-unread-symbolic</attribute>
       </item>
       <item>
         <attribute name="label" translatable="yes">Copy Handle</attribute>
         <attribute name="action">view.copy_handle</attribute>
-        <attribute name="verb-icon">emblem-shared-symbolic</attribute>
+        <attribute name="verb-icon">edit-copy-symbolic</attribute>
       </item>
     </section>
+
+    <item>
+      <attribute name="label" translatable="yes">Open in Browser</attribute>
+      <attribute name="action">view.open_in_browser</attribute>
+    </item>
+    <item>
+      <attribute name="label" translatable="yes">Receive Post Notifications</attribute>
+      <attribute name="action">view.notify_on_post</attribute>
+      <attribute name="hidden-when">action-disabled</attribute>
+    </item>
 
     <section>
         <attribute name="label" translatable="yes">Moderation</attribute>
@@ -108,10 +118,6 @@
         <attribute name="label" translatable="yes">Lists</attribute>
         <attribute name="action">view.ar_list</attribute>
         <attribute name="hidden-when">action-disabled</attribute>
-      </item>
-      <item>
-        <attribute name="label" translatable="yes">Refresh</attribute>
-        <attribute name="action">app.refresh</attribute>
       </item>
     </section>
 

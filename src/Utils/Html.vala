@@ -1,64 +1,130 @@
 public class Tuba.HtmlUtils {
-
-	public const string FALLBACK_TEXT = "[ There was an error parsing this text ]";
-
 	public static string remove_tags (string content) {
-		try {
-			//TODO: remove this when simplify() uses the HTML parsing class
-			var fixed_paragraphs = simplify (content);
+		var fixed_paragraphs = content;
 
-			var all_tags = new Regex ("<(.|\n)*?>", RegexCompileFlags.CASELESS);
-			return Widgets.RichLabel.restore_entities (all_tags.replace (fixed_paragraphs, -1, 0, ""));
+		var doc = Html.Doc.read_doc (HtmlUtils.replace_with_pango_markup (content), "", "utf8");
+		if (doc != null) {
+			var root = doc->get_root_element ();
+			if (root != null) {
+				var t_content = fixed_paragraphs;
+				remove_tags_handler (root, out t_content);
+				fixed_paragraphs = t_content;
+			}
 		}
-		catch (Error e) {
-			warning (e.message);
-			return FALLBACK_TEXT;
+		delete doc;
+
+		return restore_entities (fixed_paragraphs);
+	}
+
+	private static void remove_tags_handler (Xml.Node* root, out string content) {
+		content = "";
+		switch (root->name) {
+			case "br":
+				content += "\n";
+				break;
+			case "text":
+				if (root->content != null)
+					content += GLib.Markup.escape_text (root->content);
+				break;
+			default:
+				for (var iter = root->children; iter != null; iter = iter->next) {
+					var t_content = "";
+					remove_tags_handler (iter, out t_content);
+					content += t_content;
+				}
+				if (root->name == "p") content += "\n";
+
+				break;
 		}
 	}
 
-	//TODO: Perhaps this should use the HTML parser class
-	//      since we depend on it anyway
 	public static string simplify (string str) {
-		try {
-			var divided = str
-			.replace("<br>", "\n")
-			.replace("</br>", "")
-			.replace("<br/>", "\n")
-			.replace("<br />", "\n")
-			.replace("<p>", "")
-			.replace("</p>", "\n\n")
-			.replace("<pre>", "")
-			.replace("</pre>", "");
+		var simplified = str;
 
-			var html_params = new Regex ("(class|target|rel|data-user|data-tag)=\"(.|\n)*?\"", RegexCompileFlags.CASELESS);
-			var simplified = html_params.replace (divided, -1, 0, "");
-
-			while (simplified.has_suffix ("\n"))
-				simplified = simplified.slice (0, simplified.last_index_of ("\n"));
-
-			return simplified;
+		var doc = Html.Doc.read_doc (str, "", "utf8");
+		if (doc != null) {
+			var root = doc->get_root_element ();
+			if (root != null) {
+				var t_content = simplified;
+				simplify_handler (root, out t_content);
+				simplified = t_content;
+			}
 		}
-		catch (Error e) {
-			warning (@"Can't simplify string \"$str\":\n$(e.message)");
-			return remove_tags (str);
+		delete doc;
+
+		return simplified.strip ();
+	}
+
+	private static void simplify_handler (Xml.Node* root, out string content) {
+		content = "";
+		switch (root->name) {
+			case "a":
+				var href = root->get_prop ("href");
+				if (href != null) {
+					content += @"<a href='$(GLib.Markup.escape_text (href))'>";
+					for (var iter = root->children; iter != null; iter = iter->next) {
+						var t_content = "";
+						simplify_handler (iter, out t_content);
+						content += t_content;
+					}
+					content += "</a>";
+				}
+				break;
+			case "br":
+				content += "\n";
+				break;
+			case "text":
+				if (root->content != null)
+					content += GLib.Markup.escape_text (root->content);
+				break;
+			default:
+				for (var iter = root->children; iter != null; iter = iter->next) {
+					var t_content = "";
+					simplify_handler (iter, out t_content);
+					content += t_content;
+				}
+				if (root->name == "p") content += "\n\n";
+
+				break;
 		}
 	}
 
 	public static string replace_with_pango_markup (string str) {
-		return str
-			.replace("\n", "")
-			.replace("<strong>", "<b>")
-			.replace("</strong>", "</b>")
-			.replace("<em>", "<i>")
-			.replace("</em>", "</i>")
+		var res = str
+			.replace ("<strong>", "<b>")
+			.replace ("</strong>", "</b>")
+			.replace ("<em>", "<i>")
+			.replace ("</em>", "</i>")
 			//  .replace("<code>", "<span font_family=\"monospace\">")
 			//  .replace("</code>", "</span>\n")
-			.replace("<del>", "<s>")
-			.replace("</del>", "</s>");
+			.replace ("<del>", "<s>")
+			.replace ("</del>", "</s>");
+
+		if ("<br" in str) res = res.replace ("\n", "");
+		return res;
 	}
 
 	public static string uri_encode (string str) {
-		var restored = Widgets.RichLabel.restore_entities (str);
+		var restored = restore_entities (str);
 		return Uri.escape_string (restored);
+	}
+
+	public static string restore_entities (string content) {
+		return content
+			.replace ("&lt;", "<")
+			.replace ("&gt;", ">")
+			.replace ("&apos;", "'")
+			.replace ("&quot;", "\"")
+			.replace ("&#39;", "'")
+
+			// Always last since its prone to errors
+			// like &amp;lt; => &lt; => <
+			.replace ("&amp;", "&");
+	}
+
+	public static string escape_entities (string content) {
+		return content
+			.replace ("&nbsp;", " ")
+			.replace ("'", "&apos;");
 	}
 }

@@ -1,23 +1,23 @@
-using Gee;
-
 public abstract class Tuba.AccountStore : GLib.Object {
 
-	public ArrayList<InstanceAccount> saved { get; set; default = new ArrayList<InstanceAccount> (); }
+	public Gee.ArrayList<InstanceAccount> saved { get; set; default = new Gee.ArrayList<InstanceAccount> (); }
 	public InstanceAccount? active { get; set; default = null; }
 
-	public signal void changed (ArrayList<InstanceAccount> accounts);
+	public signal void changed (Gee.ArrayList<InstanceAccount> accounts);
 	public signal void switched (InstanceAccount? account);
 
 	public bool ensure_active_account () {
 		var has_active = false;
-		var account = find_by_handle (settings.active_account);
+		var account = find_by_uuid (settings.active_account);
+		var clear_cache = false;
 
 		if (account == null && !saved.is_empty) {
 			account = saved[0];
+			clear_cache = true;
 		}
 
 		has_active = account != null;
-		activate (account);
+		activate (account, clear_cache);
 
 		if (!has_active)
 			app.present_window (true);
@@ -46,7 +46,7 @@ public abstract class Tuba.AccountStore : GLib.Object {
 	}
 
 	public virtual void add (InstanceAccount account) throws GLib.Error {
-		message (@"Adding new account: $(account.handle)");
+		debug (@"Adding new account: $(account.handle)");
 		saved.add (account);
 		changed (saved);
 		save ();
@@ -54,7 +54,7 @@ public abstract class Tuba.AccountStore : GLib.Object {
 	}
 
 	public virtual void remove (InstanceAccount account) throws GLib.Error {
-		message (@"Removing account: $(account.handle)");
+		debug (@"Removing account: $(account.handle)");
 		account.removed ();
 		saved.remove (account);
 		changed (saved);
@@ -62,9 +62,10 @@ public abstract class Tuba.AccountStore : GLib.Object {
 		ensure_active_account ();
 	}
 
-	public InstanceAccount? find_by_handle (string handle) {
+	public InstanceAccount? find_by_uuid (string uuid) {
+		if (!GLib.Uuid.string_is_valid (uuid)) return null;
 		var iter = saved.filter (acc => {
-			return acc.handle == handle;
+			return acc.uuid == uuid;
 		});
 		iter.next ();
 
@@ -74,21 +75,22 @@ public abstract class Tuba.AccountStore : GLib.Object {
 			return iter.@get ();
 	}
 
-	public void activate (InstanceAccount? account) {
+	public void activate (InstanceAccount? account, bool clear_cache = false) {
 		if (active != null)
 			active.deactivated ();
 
 		if (account == null) {
-			message ("Reset active account");
+			debug ("Reset active account");
 			return;
-		}
-		else {
-			message (@"Activating $(account.handle)...");
+		} else {
+			debug (@"Activating $(account.handle)…");
+			if (clear_cache)
+				network.clear_cache ();
 			account.verify_credentials.begin ((obj, res) => {
 				try {
 					account.verify_credentials.end (res);
 					account.error = null;
-					settings.active_account = account.handle;
+					settings.active_account = account.uuid;
 					if (account.source != null && account.source.language != null && account.source.language != "")
 						settings.default_language = account.source.language;
 				}
@@ -116,6 +118,7 @@ public abstract class Tuba.AccountStore : GLib.Object {
 		if (account == null)
 			throw new Oopsie.INTERNAL (@"Account $handle has unknown backend: $backend");
 
+		if (account.uuid == null || !GLib.Uuid.string_is_valid (account.uuid)) account.uuid = GLib.Uuid.string_random ();
 		return account;
 	}
 
@@ -140,7 +143,7 @@ public abstract class Tuba.AccountStore : GLib.Object {
 			.with_account (account);
 		yield req.await ();
 
-		var parser = Network.get_parser_from_inputstream(req.response_body);
+		var parser = Network.get_parser_from_inputstream (req.response_body);
 		var root = network.parse (parser);
 
 		string? backend = null;
@@ -153,7 +156,7 @@ public abstract class Tuba.AccountStore : GLib.Object {
 			throw new Oopsie.INTERNAL ("This instance is unsupported.");
 		else {
 			account.backend = backend;
-			message (@"$(account.instance) is using $(account.backend)");
+			debug (@"$(account.instance) is using $(account.backend)");
 		}
 	}
 

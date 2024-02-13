@@ -1,4 +1,5 @@
 public class Tuba.API.Account : Entity, Widgetizable {
+	public API.Relationship? tuba_rs { get; set; default=null; }
 
 	public string id { get; set; }
 	public string username { get; set; }
@@ -17,18 +18,33 @@ public class Tuba.API.Account : Entity, Widgetizable {
 		}
 	}
 
-	public string note { get; set; }
+	public string note { get; set; default=""; }
 	public bool locked { get; set; }
 	public string header { get; set; }
 	public string avatar { get; set; }
 	public string url { get; set; }
+	public bool bot { get; set; default=false; }
 	public string created_at { get; set; }
 	public Gee.ArrayList<API.Emoji>? emojis { get; set; }
 	public int64 followers_count { get; set; }
 	public int64 following_count { get; set; }
 	public int64 statuses_count { get; set; }
+	public Gee.ArrayList<API.AccountRole>? roles { get; set; default = null; }
 	public Gee.ArrayList<API.AccountField>? fields { get; set; default = null; }
 	public AccountSource? source { get; set; default = null; }
+
+	public override Type deserialize_array_type (string prop) {
+		switch (prop) {
+			case "emojis":
+				return typeof (API.Emoji);
+			case "fields":
+				return typeof (API.AccountField);
+			case "roles":
+				return typeof (API.AccountRole);
+		}
+
+		return base.deserialize_array_type (prop);
+	}
 
 	public string handle {
 		owned get {
@@ -55,15 +71,15 @@ public class Tuba.API.Account : Entity, Widgetizable {
 
 	public Gee.HashMap<string, string>? emojis_map {
 		owned get {
-			return gen_emojis_map();
+			return gen_emojis_map ();
 		}
 	}
 
 	private Gee.HashMap<string, string>? gen_emojis_map () {
-		var res = new Gee.HashMap<string, string>();
+		var res = new Gee.HashMap<string, string> ();
 		if (emojis != null && emojis.size > 0) {
 			emojis.@foreach (e => {
-				res.set(e.shortcode, e.url);
+				res.set (e.shortcode, e.url);
 				return true;
 			});
 		}
@@ -92,11 +108,7 @@ public class Tuba.API.Account : Entity, Widgetizable {
 	}
 
 	public override Gtk.Widget to_widget () {
-		var status = new API.Status.from_account (this);
-		var status_widget = new Widgets.Status (status);
-		status_widget.actions.visible = false;
-
-		return status_widget;
+		return new Widgets.Account (this);
 	}
 
 	public override void open () {
@@ -118,4 +130,13 @@ public class Tuba.API.Account : Entity, Widgetizable {
 		}
 	}
 
+	public Request accept_follow_request () {
+        return new Request.POST (@"/api/v1/follow_requests/$id/authorize")
+            .with_account (accounts.active);
+    }
+
+	public Request decline_follow_request () {
+        return new Request.POST (@"/api/v1/follow_requests/$id/reject")
+            .with_account (accounts.active);
+    }
 }

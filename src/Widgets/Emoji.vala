@@ -1,13 +1,20 @@
-using Gtk;
-using Gdk;
-
 public class Tuba.Widgets.Emoji : Adw.Bin {
 
-	protected Image image;
-	public string? shortcode { get; set; } 
+	protected Gtk.Image image;
+	public string? shortcode { get; set; }
+	public int pixel_size {
+		get { return image.pixel_size; }
+		set { image.pixel_size = value; }
+	}
+	public Gtk.IconSize icon_size {
+		get { return image.icon_size; }
+		set { image.icon_size = value; }
+	}
 
 	construct {
-		image = new Gtk.Image ();
+		image = new Gtk.Image () {
+			css_classes = { "lww-emoji" }
+		};
         child = image;
 	}
 
@@ -18,13 +25,12 @@ public class Tuba.Widgets.Emoji : Adw.Bin {
 		}
 
 		GLib.Idle.add (() => {
-			image_cache.request_paintable (emoji_url, on_cache_response);
+			Tuba.Helper.Image.request_paintable (emoji_url, null, on_cache_response);
 			return GLib.Source.REMOVE;
 		});
 	}
 
-	void on_cache_response (bool is_loaded, owned Paintable? data) {
-		if (image != null)
-			image.paintable = data;
+	void on_cache_response (Gdk.Paintable? data) {
+		image.paintable = data;
 	}
 }

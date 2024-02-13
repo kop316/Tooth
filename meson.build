@@ -1,7 +1,7 @@
 project(
     'dev.geopjr.Tuba',
     ['c', 'vala'],
-    version: '0.3.2',
+    version: '0.6.3',
     meson_version: '>= 0.56.0',
     default_options: [
         'warning_level=2',
@@ -9,23 +9,30 @@ project(
     ],
 )
 
+# add_project_arguments(['--define=USE_LISTVIEW'], language: 'vala')
+
+# https://gitlab.gnome.org/GNOME/vala/-/issues/1413#note_1707480
+if meson.get_compiler ('c').get_id () == 'clang'
+  add_project_arguments('-Wno-incompatible-function-pointer-types', language: 'c')
+endif
+
 devel = get_option('devel')
 distro = get_option('distro')
 
-# Setup configuration file, accessed via vapi/build.vapi
+# Setup configuration file
 config = configuration_data()
-config.set_quoted('EXEC_NAME', meson.project_name())
-config.set_quoted('GETTEXT_PACKAGE', meson.project_name())
-config.set_quoted('LOCALEDIR', join_paths(get_option('prefix'), get_option('localedir')))
-config.set_quoted('DOMAIN', meson.project_name ())
-config.set_quoted('G_LOG_DOMAIN', 'Tuba')
-config.set_quoted('RESOURCES', '/' + '/'.join(meson.project_name().split('.')) + '/')
-config.set_quoted('VERSION', meson.project_version())
-config.set_quoted('PREFIX', get_option('prefix'))
-config.set_quoted('NAME', 'Tuba')
-config.set_quoted('WEBSITE', 'https://github.com/GeopJr/Tuba')
-config.set_quoted('SUPPORT_WEBSITE', 'https://github.com/GeopJr/Tuba/issues')
-config.set_quoted('PROFILE', devel ? 'development' : 'production')
+config.set('EXEC_NAME', meson.project_name())
+config.set('GETTEXT_PACKAGE', meson.project_name())
+config.set('LOCALEDIR', join_paths(get_option('prefix'), get_option('localedir')))
+config.set('DOMAIN', meson.project_name ())
+config.set('G_LOG_DOMAIN', 'Tuba')
+config.set('RESOURCES', '/' + '/'.join(meson.project_name().split('.')) + '/')
+config.set('VERSION', meson.project_version())
+config.set('PREFIX', get_option('prefix'))
+config.set('NAME', 'Tuba')
+config.set('WEBSITE', 'https://github.com/GeopJr/Tuba')
+config.set('SUPPORT_WEBSITE', 'https://github.com/GeopJr/Tuba/issues')
+config.set('PROFILE', devel ? 'development' : 'production')
 
 if devel
   git = find_program('git')
@@ -33,14 +40,21 @@ if devel
     branch = run_command('git', 'branch', '--show-current', check: true).stdout().strip()
     revision = run_command('git', 'rev-parse', '--short', 'HEAD', check: true).stdout().strip()
     version = '@0@-@1@'.format(branch, revision)
-    config.set_quoted('VERSION', version)
+    config.set('VERSION', version)
   endif
 endif
 
-configure_file(output: 'config.h', configuration: config)
+devmode = false
+if devmode
+  add_project_arguments(['--define=DEV_MODE'], language: 'vala')
+endif
+
+if host_machine.system() == 'windows'
+  add_project_arguments(['--define=WINDOWS'], language: 'vala')
+  add_project_arguments('-mwindows', language: 'c')
+endif
 
 add_project_arguments (
-  '--include','config.h',
   '-DGETTEXT_PACKAGE="@0@"'.format(meson.project_name()),
   language: 'c'
 )
@@ -55,53 +69,58 @@ asresources = gnome.compile_resources(
     c_name: 'as',
 )
 
-libgtk_dep = dependency('gtk4', version: '>=4.0.0', required: true)
-libadwaita_dep = dependency('libadwaita-1', version: '>=1.2', required: true)
-gtksourceview_dep = dependency('gtksourceview-5', required: false, version: '>=5.6.0')
+libgtk_dep = dependency('gtk4', version: '>=4.11.3', required: true)
+libadwaita_dep = dependency('libadwaita-1', version: '>=1.4', required: true)
+gtksourceview_dep = dependency('gtksourceview-5', required: true, version: '>=5.6.0')
 libwebp_dep = dependency('libwebp', required: false)
+libspelling = dependency('libspelling-1', required: false)
 
 if not libwebp_dep.found ()
   warning('WebP support might be missing, please install webp-pixbuf-loader.')
 endif
 
-if libgtk_dep.version().version_compare('>=4.8.0')
-  add_project_arguments(['--define=GTK_4_8'], language: 'vala')
+if libgtk_dep.version().version_compare('>=4.12.0')
+  add_project_arguments(['--define=GTK_4_12'], language: 'vala')
 endif
 
-if libgtk_dep.version().version_compare('>=4.10.0')
-  add_project_arguments(['--define=GTK_4_10'], language: 'vala')
+if meson.get_compiler('vala').version().version_compare('>=0.56.11')
+  add_project_arguments(['--define=VALAC_05611'], language: 'vala')
 endif
 
-if not gtksourceview_dep.found ()
-  warning('Support for lack of gtksourceview-5 is not guaranteed.')
-  add_project_arguments(['--define=MISSING_GTKSOURCEVIEW'], language: 'vala')
-elif gtksourceview_dep.version().version_compare('>=5.7.1')
+if libspelling.found ()
+  add_project_arguments(['--define=LIBSPELLING'], language: 'vala')
+endif
+
+if gtksourceview_dep.version().version_compare('>=5.7.1')
   add_project_arguments(['--define=GTKSOURCEVIEW_5_7_1'], language: 'vala')
 endif
 
-sources = files(
-    'vapi/build.vapi',
-)
+sources = files()
 subdir('src')
+
+final_deps = [
+  dependency('glib-2.0', version: '>=2.76.0'),
+  dependency('gee-0.8', version: '>=0.8.5'),
+  dependency('libsoup-3.0'),
+  dependency('json-glib-1.0', version: '>=1.4.4'),
+  dependency('libxml-2.0'),
+  dependency('libsecret-1', required: true),
+  libspelling,
+  gtksourceview_dep,
+  libgtk_dep,
+  libadwaita_dep,
+  meson.get_compiler('c').find_library('m', required: false)
+]
 
 executable(
     meson.project_name(),
     asresources,
     sources,
-    dependencies: [
-        dependency('glib-2.0', version: '>=2.70'),
-        dependency('gee-0.8', version: '>=0.8.5'),
-        dependency('libsoup-3.0'),
-        dependency('json-glib-1.0', version: '>=1.4.4'),
-        dependency('libxml-2.0'),
-        dependency('libsecret-1', required: true),
-        gtksourceview_dep,
-        libgtk_dep,
-        libadwaita_dep,
-    ],
+    dependencies: final_deps,
     install: true,
 )
 
+subdir('tests')
 subdir('data')
 subdir('po')
 

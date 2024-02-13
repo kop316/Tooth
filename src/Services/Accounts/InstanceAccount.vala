@@ -1,6 +1,3 @@
-using GLib;
-using Gee;
-
 public class Tuba.InstanceAccount : API.Account, Streamable {
 
 	public const string EVENT_NEW_POST = "update";
@@ -18,9 +15,10 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 	public const string KIND_REMOTE_REBLOG = "__remote-reblog";
 	public const string KIND_EDITED = "update";
 
+	public string uuid { get; set; }
 	public string? backend { set; get; }
 	public API.Instance? instance_info { get; set; }
-	public ArrayList<API.Emoji>? instance_emojis { get; set; }
+	public Gee.ArrayList<API.Emoji>? instance_emojis { get; set; }
 	public string? instance { get; set; }
 	public string? client_id { get; set; }
 	public string? client_secret { get; set; }
@@ -29,7 +27,7 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 
 	public GLib.ListStore known_places = new GLib.ListStore (typeof (Place));
 
-	public HashMap<Type,Type> type_overrides = new HashMap<Type,Type> ();
+	public Gee.HashMap<Type,Type> type_overrides = new Gee.HashMap<Type,Type> ();
 
 	public new string handle_short {
 		owned get { return @"@$username"; }
@@ -64,12 +62,30 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 		this.construct_streamable ();
 		this.stream_event[EVENT_NOTIFICATION].connect (on_notification_event);
 		this.register_known_places (this.known_places);
+
+		#if DEV_MODE
+			app.dev_new_notification.connect (node => {
+				try {
+					var entity = create_entity<API.Notification> (node);
+
+					var id = int.parse (entity.id);
+					if (id > last_received_id) {
+						last_received_id = id;
+
+						unread_count++;
+						send_toast (entity);
+					}
+				} catch (Error e) {
+					warning (@"on_notification_event: $(e.message)");
+				}
+			});
+		#endif
 	}
 	~InstanceAccount () {
 		destruct_streamable ();
 	}
 
-	public InstanceAccount.empty (string instance){
+	public InstanceAccount.empty (string instance) {
 		Object (
 			id: "",
 			instance: instance
@@ -94,7 +110,7 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 			}
 		}
 	}
-	public HashMap<string,Visibility> visibility = new HashMap<string,Visibility> ();
+	public Gee.HashMap<string,Visibility> visibility = new Gee.HashMap<string,Visibility> ();
 	public ListStore visibility_list = new ListStore (typeof (Visibility));
 	public void set_visibility (Visibility obj) {
 		this.visibility[obj.id] = obj;
@@ -124,68 +140,101 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 		var req = new Request.GET ("/api/v1/accounts/verify_credentials").with_account (this);
 		yield req.await ();
 
-		var parser = Network.get_parser_from_inputstream(req.response_body);
+		update_object (req.response_body);
+	}
+
+	public void update_object (InputStream in_stream) throws Error {
+		var parser = Network.get_parser_from_inputstream (in_stream);
 		var node = network.parse_node (parser);
 		var updated = API.Account.from (node);
 		patch (updated);
 
-		message (@"$handle: profile updated");
+		debug (@"$handle: profile updated");
 	}
 
 	public async Entity resolve (string url) throws Error {
-		message (@"Resolving URL: \"$url\"...");
+		debug (@"Resolving URL: \"$url\"…");
 		var results = yield API.SearchResults.request (url, this);
 		var entity = results.first ();
-		message (@"Found $(entity.get_class ().get_name ())");
+		debug (@"Found $(entity.get_class ().get_name ())");
 		return entity;
 	}
 
-	public virtual void describe_kind (string kind, out string? icon, out string? descr, API.Account account, out string? descr_url) {
+	public struct Kind {
+		string? icon;
+		string? description;
+		string? url;
+	}
+
+	public virtual void describe_kind (
+		string kind,
+		out Kind result,
+		string? actor_name = null,
+		string? callback_url = null
+	) {
 		switch (kind) {
 			case KIND_MENTION:
-				icon = "tuba-chat-symbolic";
-				descr = _("%s mentioned you").printf (account.display_name);
-				descr_url = account.url;
+				result = {
+					"tuba-chat-symbolic",
+					_("%s mentioned you").printf (actor_name),
+					callback_url
+				};
 				break;
 			case KIND_REBLOG:
-				icon = "tuba-media-playlist-repeat-symbolic";
-				descr = _("%s boosted your post").printf (account.display_name);
-				descr_url = account.url;
+				result = {
+					"tuba-media-playlist-repeat-symbolic",
+					_("%s boosted your post").printf (actor_name),
+					callback_url
+				};
 				break;
 			case KIND_REMOTE_REBLOG:
-				icon = "tuba-media-playlist-repeat-symbolic";
-				descr = _("%s boosted").printf (account.display_name);
-				descr_url = account.url;
+				result = {
+					"tuba-media-playlist-repeat-symbolic",
+					_("%s boosted").printf (actor_name),
+					callback_url
+				};
 				break;
 			case KIND_FAVOURITE:
-				icon = "tuba-starred-symbolic";
-				descr = _("%s favorited your post").printf (account.display_name);
-				descr_url = account.url;
+				result = {
+					"starred-symbolic",
+					_("%s favorited your post").printf (actor_name),
+					callback_url
+				};
 				break;
 			case KIND_FOLLOW:
-				icon = "tuba-contact-new-symbolic";
-				descr = _("%s now follows you").printf (account.display_name);
-				descr_url = account.url;
+				result = {
+					"contact-new-symbolic",
+					_("%s now follows you").printf (actor_name),
+					callback_url
+				};
 				break;
 			case KIND_FOLLOW_REQUEST:
-				icon = "tuba-contact-new-symbolic";
-				descr = _("%s wants to follow you").printf (account.display_name);
-				descr_url = account.url;
+				result = {
+					"contact-new-symbolic",
+					_("%s wants to follow you").printf (actor_name),
+					callback_url
+				};
 				break;
 			case KIND_POLL:
-				icon = "tuba-check-round-outline-symbolic";
-				descr = _("Poll results");
-				descr_url = null;
+				result = {
+					"tuba-check-round-outline-symbolic",
+					_("Poll results"),
+					null
+				};
 				break;
 			case KIND_EDITED:
-				icon = "document-edit-symbolic";
-				descr = _("%s edited a post").printf (account.display_name);
-				descr_url = null;
+				result = {
+					"document-edit-symbolic",
+					_("%s edited a post").printf (actor_name),
+					null
+				};
 				break;
 			default:
-				icon = null;
-				descr = null;
-				descr_url = null;
+				result = {
+					null,
+					null,
+					null
+				};
 				break;
 		}
 	}
@@ -199,13 +248,72 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 	public int last_received_id { get; set; default = 0; }
 	private bool passed_init_notifications = false;
 
+	public class StatusContentType : Object {
+		public string mime { get; construct set; }
+		public string icon_name { get; construct set; }
+		public string title { get; construct set; }
+
+		public StatusContentType (string content_type) {
+			mime = content_type;
+
+			switch (content_type.down ()) {
+				case "text/plain":
+					icon_name = "tuba-paper-symbolic";
+					// translators: this is a content type
+					title = _("Plain Text");
+					break;
+				case "text/html":
+					icon_name = "tuba-code-symbolic";
+					title = "HTML";
+					break;
+				case "text/markdown":
+					icon_name = "tuba-markdown-symbolic";
+					title = "Markdown";
+					break;
+				case "text/bbcode":
+					icon_name = "tuba-rich-text-symbolic";
+					title = "BBCode";
+					break;
+				case "text/x.misskeymarkdown":
+					icon_name = "tuba-rich-text-symbolic";
+					title = "MFM";
+					break;
+				default:
+					icon_name = "tuba-rich-text-symbolic";
+
+					int slash = content_type.index_of_char ('/');
+					int ct_l = content_type.length;
+					if (slash == -1 || slash == ct_l) {
+						title = content_type.up ();
+					} else {
+						title = content_type.slice (slash + 1, ct_l).up ();
+					}
+
+					break;
+			}
+		}
+
+		public static EqualFunc<string> compare = (a, b) => {
+			return ((StatusContentType) a).mime == ((StatusContentType) b).mime;
+		};
+	}
+
+	public GLib.ListStore supported_mime_types = new GLib.ListStore (typeof (StatusContentType));
 	public void gather_instance_info () {
 		new Request.GET ("/api/v1/instance")
 			.with_account (this)
-			.then ((sess, msg, in_stream) => {
-				var parser = Network.get_parser_from_inputstream(in_stream);
+			.then ((in_stream) => {
+				var parser = Network.get_parser_from_inputstream (in_stream);
 				var node = network.parse_node (parser);
 				instance_info = API.Instance.from (node);
+
+				var content_types = instance_info.compat_supported_mime_types;
+				if (content_types != null) {
+					supported_mime_types.remove_all ();
+					foreach (string content_type in content_types) {
+						supported_mime_types.append (new StatusContentType (content_type));
+					}
+				}
 			})
 			.exec ();
 	}
@@ -213,11 +321,11 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 	public void gather_instance_custom_emojis () {
 		new Request.GET ("/api/v1/custom_emojis")
 			.with_account (this)
-			.then ((sess, msg, in_stream) => {
-				var parser = Network.get_parser_from_inputstream(in_stream);
+			.then ((in_stream) => {
+				var parser = Network.get_parser_from_inputstream (in_stream);
 				var node = network.parse_node (parser);
 				Value res_emojis;
-				Entity.des_list(out res_emojis, node, typeof (API.Emoji));
+				Entity.des_list (out res_emojis, node, typeof (API.Emoji));
 				instance_emojis = (Gee.ArrayList<Tuba.API.Emoji>) res_emojis;
 			})
 			.exec ();
@@ -228,14 +336,14 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 
 		new Request.GET ("/api/v1/notifications")
 			.with_account (this)
-			.with_param ("min_id", @"$last_read_id")
-			.then ((sess, msg, in_stream) => {
-				var parser = Network.get_parser_from_inputstream(in_stream);
-				var array = Network.get_array_mstd(parser);
+			.with_param ("min_id", last_read_id.to_string ())
+			.then ((in_stream) => {
+				var parser = Network.get_parser_from_inputstream (in_stream);
+				var array = Network.get_array_mstd (parser);
 				if (array != null) {
-					unread_count = (int)array.get_length();
+					unread_count = (int)array.get_length ();
 					if (unread_count > 0) {
-						last_received_id = int.parse (array.get_object_element(0).get_string_member_with_default ("id", "-1"));
+						last_received_id = int.parse (array.get_object_element (0).get_string_member_with_default ("id", "-1"));
 					}
 				}
 				passed_init_notifications = true;
@@ -246,19 +354,19 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 	public virtual void check_notifications () {
 		new Request.GET ("/api/v1/markers?timeline[]=notifications")
 			.with_account (this)
-			.then ((sess, msg, in_stream) => {
-				var parser = Network.get_parser_from_inputstream(in_stream);
+			.then ((in_stream) => {
+				var parser = Network.get_parser_from_inputstream (in_stream);
 				var root = network.parse (parser);
-				if (!root.has_member("notifications")) return;
+				if (!root.has_member ("notifications")) return;
 				var notifications = root.get_object_member ("notifications");
 				last_read_id = int.parse (notifications.get_string_member_with_default ("last_read_id", "-1") );
-				if (!passed_init_notifications) init_notifications();
+				if (!passed_init_notifications) init_notifications ();
 			})
 			.exec ();
 	}
 
 	public void read_notifications (int up_to_id) {
-		message (@"Reading notifications up to id $up_to_id");
+		debug (@"Reading notifications up to id $up_to_id");
 
 		if (up_to_id > last_read_id) {
 			last_read_id = up_to_id;
@@ -267,18 +375,20 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 				// Mark as read
 				new Request.POST ("/api/v1/markers")
 					.with_account (this)
-					.with_form_data ("notifications[last_read_id]", @"$up_to_id")
-					.then(() => {})
+					.with_form_data ("notifications[last_read_id]", up_to_id.to_string ())
+					.then (() => {})
 					.exec ();
 
 				// Pleroma FE doesn't mark them as read by just updating the marker
 				if (instance_info != null && instance_info?.pleroma != null) {
 					new Request.POST ("/api/v1/pleroma/notifications/read")
 						.with_account (this)
-						.with_form_data ("max_id", @"$up_to_id")
-						.then(() => {})
+						.with_form_data ("max_id", up_to_id.to_string ())
+						.then (() => {})
 						.exec ();
 				}
+
+				sent_notifications.clear ();
 			}
 		}
 
@@ -299,7 +409,7 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 
 	//  public void read_notification (int id) {
 	//  	if (id <= last_read_id) {
-	//  		message (@"Read notification with id: $id");
+	//  		debug (@"Read notification with id: $id");
 	//  		app.withdraw_notification (id.to_string ());
 	//  		unread_toasts.unset (id);
 	//  	}
@@ -307,10 +417,28 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 	//  	has_unread = unread_count > 0;
 	//  }
 
+	private Gee.HashMap<string, int> sent_notifications = new Gee.HashMap<string, int> ();
+	private const string[] GROUPED_KINDS = {
+		KIND_FAVOURITE,
+		KIND_REBLOG
+	};
 	public void send_toast (API.Notification obj) {
-		var toast = obj.to_toast (this);
+		if (obj.kind != null && (obj.kind in settings.muted_notification_types)) return;
+
 		var id = obj.id;
-		app.send_notification (id, toast);
+		var others = 0;
+
+		if (settings.group_push_notifications && obj.status != null && obj.kind in GROUPED_KINDS) {
+			id = @"$(obj.status.id)-$(obj.kind)";
+			if (sent_notifications.has_key (id)) {
+				others = sent_notifications.get (id) + 1;
+			}
+			sent_notifications.set (id, others);
+		}
+
+		obj.to_toast.begin (this, others, (_obj, res) => {
+			app.send_notification (id, obj.to_toast.end (res));
+		});
 		//  sent_notification_ids.add(id);
 	}
 
@@ -323,7 +451,7 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 
 	public virtual string? get_stream_url () {
 		if (instance == null || access_token == null) return null;
-		return @"$instance/api/v1/streaming/?stream=user:notification&access_token=$access_token";
+		return @"$instance/api/v1/streaming?stream=user:notification&access_token=$access_token";
 	}
 
 	public virtual void on_notification_event (Streamable.Event ev) {
@@ -342,4 +470,10 @@ public class Tuba.InstanceAccount : API.Account, Streamable {
 		}
 	}
 
+	// Notification actions
+	public virtual void open_status_url (string url) {}
+	public virtual void answer_follow_request (string issuer_id, string fr_id, bool accept) {}
+	public virtual void follow_back (string issuer_id, string acc_id) {}
+	public virtual void reply_to_status_uri (string issuer_id, string uri) {}
+	public virtual void remove_from_followers (string issuer_id, string acc_id) {}
 }

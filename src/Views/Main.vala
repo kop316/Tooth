@@ -1,57 +1,95 @@
-using Gtk;
-
 public class Tuba.Views.Main : Views.TabbedBase {
-
-	public Main () {
-		Object(is_main: true);
+	construct {
+        is_main = true;
 
 		add_tab (new Views.Home ());
 		add_tab (new Views.Notifications ());
 		add_tab (new Views.Conversations ());
+    }
+
+	public string visible_child_name {
+		get {
+			return stack.visible_child_name;
+		}
+	}
+
+	private Gtk.Button search_button;
+	protected override void on_view_switched () {
+		base.on_view_switched ();
+	}
+
+	// Unused
+	//  private void go_home () {
+	//  	((Views.TabbedBase) app.main_window.main_page.child).change_page_to_named ("1");
+	//  	app.main_window.update_selected_home_item ();
+	//  }
+
+	private Gtk.Stack title_wrapper_stack;
+	public bool title_wrapper_stack_visible {
+		get {
+			return title_wrapper_stack.visible_child_name == "title";
+		}
+		set {
+			title_wrapper_stack.visible_child_name = (value ? "stack" : "title");
+		}
+	}
+
+	private void bind () {
+		app.bind_property ("is-mobile", search_button, "visible", GLib.BindingFlags.SYNC_CREATE);
+		app.bind_property ("is-mobile", switcher_bar, "visible", GLib.BindingFlags.SYNC_CREATE);
+		app.bind_property ("is-mobile", this, "title-wrapper-stack-visible", GLib.BindingFlags.SYNC_CREATE);
 	}
 
 	public override void build_header () {
 		base.build_header ();
-		back_button.hide ();
+		header.title_widget = null;
 
-		var search_button = new Button();
-		search_button.icon_name = "tuba-loupe-large-symbolic";
-		search_button.tooltip_text = _("Search");
-		search_button.clicked.connect ((source) => {
-			app.main_window.open_view (new Views.Search ());
-		});
-		header.pack_end(search_button);
+		title_wrapper_stack = new Gtk.Stack ();
+		title_wrapper_stack.add_named (title_stack, "stack");
+		var title_header = new Adw.WindowTitle (label, "");
+		bind_property ("label", title_header, "title", BindingFlags.SYNC_CREATE);
+		title_wrapper_stack.add_named (title_header, "title");
+		header.title_widget = title_wrapper_stack;
 
-		var sidebar_button = new ToggleButton ();
+		search_button = new Gtk.Button () {
+			icon_name = "tuba-loupe-large-symbolic",
+			tooltip_text = _("Search")
+		};
+		search_button.clicked.connect (open_search);
+		header.pack_end (search_button);
+
+		var sidebar_button = new Gtk.ToggleButton ();
 		header.pack_start (sidebar_button);
 		sidebar_button.icon_name = "tuba-dock-left-symbolic";
 
-		header.show_start_title_buttons = false;
-		app.notify["main-window"].connect (() => {
+		bind ();
+		ulong main_window_notify = 0;
+		main_window_notify = app.notify["main-window"].connect (() => {
 			if (app.main_window == null) {
 				sidebar_button.hide ();
 				return;
 			}
 
-			app.main_window.flap.bind_property ("folded", sidebar_button, "visible", BindingFlags.SYNC_CREATE, (b, src, ref target) => {
-				var state = src.get_boolean ();
-				target.set_boolean (state);
+			app.main_window.split_view.bind_property (
+				"collapsed",
+				sidebar_button,
+				"visible",
+				BindingFlags.SYNC_CREATE
+			);
 
-				var sidebar = app.main_window.flap.flap as Views.Sidebar;
-				if (sidebar != null) sidebar.show_window_controls = !state;
-				header.show_start_title_buttons = state;
+			app.main_window.split_view.bind_property (
+				"show-sidebar",
+				sidebar_button,
+				"active",
+				BindingFlags.SYNC_CREATE | BindingFlags.BIDIRECTIONAL
+			);
 
-				return true;
-			});
-
-			app.main_window.flap.bind_property ("reveal-flap", sidebar_button, "active", BindingFlags.SYNC_CREATE | BindingFlags.BIDIRECTIONAL);
-			//  app.main_window.flap.bind_property ("reveal-flap", sidebar_button, "icon-name", BindingFlags.SYNC_CREATE, (b, src, ref target) => {
-			//  	var state = src.get_boolean ();
-			//  	target.set_string (state ? "sidebar-hide-symbolic" : "sidebar-show-symbolic" );
-			//  	return true;
-			//  });
+			app.disconnect (main_window_notify);
 		});
 
 	}
 
+	void open_search () {
+		app.main_window.open_view (new Views.Search ());
+	}
 }
